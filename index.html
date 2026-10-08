@@ -1,0 +1,1674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GeoDrop — Fullscreen Spatial KML & GeoJSON Viewer</title>
+  <meta name="description" content="Modern, full-screen GIS viewer for OpenLayers. Drag and drop KML, KMZ, and GeoJSON spatial files to visualize, inspect, and analyze geographic data instantly.">
+
+  <!-- OpenLayers 10.4.0 CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v10.4.0/ol.css">
+
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- JSZip for KMZ support -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <!-- OpenLayers 10.4.0 JS -->
+  <script src="https://cdn.jsdelivr.net/npm/ol@v10.4.0/dist/ol.js"></script>
+
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --surface-glass: rgba(15, 23, 42, 0.78);
+      --surface-glass-border: rgba(255, 255, 255, 0.12);
+      --surface-glass-hover: rgba(30, 41, 59, 0.88);
+      --surface-card: rgba(18, 26, 47, 0.92);
+      
+      --accent-cyan: #06b6d4;
+      --accent-cyan-glow: rgba(6, 182, 212, 0.4);
+      --accent-blue: #3b82f6;
+      --accent-violet: #8b5cf6;
+      --accent-emerald: #10b981;
+      --accent-rose: #f43f5e;
+      --accent-amber: #f59e0b;
+      
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 18px;
+      --radius-xl: 24px;
+      
+      --shadow-lg: 0 12px 36px -4px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(0, 0, 0, 0.35);
+      --shadow-glow: 0 0 25px rgba(6, 182, 212, 0.35);
+      
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: var(--font-sans);
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+    }
+
+    /* Fullscreen Map Canvas */
+    #map {
+      position: absolute;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      background-color: #0b0f19;
+    }
+
+    /* Custom OpenLayers UI Overrides */
+    .ol-control {
+      background: none !important;
+      padding: 0 !important;
+    }
+
+    .ol-zoom {
+      top: unset !important;
+      left: unset !important;
+      right: 20px !important;
+      bottom: 28px !important;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 10;
+    }
+
+    .ol-zoom button {
+      width: 38px !important;
+      height: 38px !important;
+      background: var(--surface-glass) !important;
+      color: var(--text-main) !important;
+      border: 1px solid var(--surface-glass-border) !important;
+      backdrop-filter: blur(12px) !important;
+      -webkit-backdrop-filter: blur(12px) !important;
+      border-radius: var(--radius-sm) !important;
+      font-size: 18px !important;
+      font-weight: 600 !important;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    }
+
+    .ol-zoom button:hover {
+      background: var(--surface-glass-hover) !important;
+      border-color: var(--accent-cyan) !important;
+      color: var(--accent-cyan) !important;
+      transform: translateY(-1px);
+    }
+
+    .ol-scale-line {
+      left: unset !important;
+      right: 74px !important;
+      bottom: 28px !important;
+      background: var(--surface-glass) !important;
+      border: 1px solid var(--surface-glass-border) !important;
+      backdrop-filter: blur(12px) !important;
+      border-radius: var(--radius-sm) !important;
+      padding: 4px 8px !important;
+      font-family: var(--font-mono) !important;
+      font-size: 11px !important;
+      color: var(--text-muted) !important;
+    }
+
+    .ol-scale-line-inner {
+      border: 1px solid var(--text-muted) !important;
+      border-top: none !important;
+      color: var(--text-main) !important;
+      font-weight: 500 !important;
+    }
+
+    .ol-attribution {
+      bottom: 6px !important;
+      left: 12px !important;
+      right: unset !important;
+      background: rgba(11, 15, 25, 0.65) !important;
+      backdrop-filter: blur(8px) !important;
+      border-radius: var(--radius-sm) !important;
+      border: 1px solid rgba(255, 255, 255, 0.08) !important;
+      padding: 2px 8px !important;
+      font-size: 11px !important;
+      color: var(--text-dim) !important;
+    }
+
+    .ol-attribution a {
+      color: var(--text-muted) !important;
+      text-decoration: none !important;
+    }
+    .ol-attribution a:hover {
+      color: var(--accent-cyan) !important;
+    }
+
+    /* Floating Top Navigation Bar */
+    .top-nav {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      right: 16px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+
+    .nav-brand-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      pointer-events: auto;
+    }
+
+    .glass-pill {
+      background: var(--surface-glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--surface-glass-border);
+      border-radius: var(--radius-lg);
+      padding: 8px 16px;
+      box-shadow: var(--shadow-lg);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text-main);
+    }
+
+    .brand-icon-wrapper {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #06b6d4, #3b82f6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 12px rgba(6, 182, 212, 0.5);
+    }
+
+    .brand-icon-wrapper svg {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: #ffffff;
+      stroke-width: 2.2;
+    }
+
+    .brand-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      background: linear-gradient(180deg, #ffffff 40%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .badge-count {
+      background: rgba(6, 182, 212, 0.15);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+
+    /* Actions in Top Nav */
+    .nav-actions-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      pointer-events: auto;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      border: 1px solid var(--surface-glass-border);
+      background: var(--surface-glass);
+      color: var(--text-main);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      user-select: none;
+      outline: none;
+    }
+
+    .btn svg {
+      width: 16px;
+      height: 16px;
+      stroke-width: 2;
+    }
+
+    .btn:hover {
+      background: var(--surface-glass-hover);
+      border-color: rgba(255, 255, 255, 0.25);
+      transform: translateY(-1px);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7 0%, #06b6d4 100%);
+      border-color: rgba(6, 182, 212, 0.5);
+      color: #ffffff;
+      box-shadow: 0 4px 18px rgba(6, 182, 212, 0.35);
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #0369a1 0%, #0891b2 100%);
+      box-shadow: 0 6px 22px rgba(6, 182, 212, 0.5);
+      border-color: rgba(6, 182, 212, 0.8);
+    }
+
+    .select-dropdown {
+      background: var(--surface-glass);
+      color: var(--text-main);
+      border: 1px solid var(--surface-glass-border);
+      backdrop-filter: blur(14px);
+      border-radius: var(--radius-md);
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 500;
+      outline: none;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      transition: border-color 0.2s ease;
+    }
+
+    .select-dropdown option {
+      background: #0f172a;
+      color: #f8fafc;
+    }
+
+    .select-dropdown:hover, .select-dropdown:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    /* Floating Layer Manager Drawer */
+    .layer-panel {
+      position: absolute;
+      top: 76px;
+      left: 16px;
+      width: 320px;
+      max-height: calc(100vh - 120px);
+      background: var(--surface-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--surface-glass-border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+    }
+
+    .layer-panel.collapsed {
+      transform: translateX(-340px);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .layer-panel-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--surface-glass-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(15, 23, 42, 0.5);
+    }
+
+    .layer-panel-title {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-main);
+    }
+
+    .layer-panel-title svg {
+      width: 15px;
+      height: 15px;
+      color: var(--accent-cyan);
+    }
+
+    .layer-panel-body {
+      padding: 12px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 480px;
+    }
+
+    /* Scrollbar styling */
+    .layer-panel-body::-webkit-scrollbar,
+    .popup-content::-webkit-scrollbar {
+      width: 5px;
+    }
+    .layer-panel-body::-webkit-scrollbar-thumb,
+    .popup-content::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+
+    .layer-item-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .layer-item-card:hover {
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(255, 255, 255, 0.15);
+      transform: translateY(-1px);
+    }
+
+    .layer-item-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .layer-title-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow: hidden;
+    }
+
+    .layer-color-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      box-shadow: 0 0 8px currentColor;
+    }
+
+    .layer-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 160px;
+    }
+
+    .layer-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .layer-icon-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 5px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+
+    .layer-icon-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-main);
+    }
+
+    .layer-icon-btn.btn-delete:hover {
+      background: rgba(244, 63, 94, 0.2);
+      color: var(--accent-rose);
+    }
+
+    .layer-icon-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .layer-item-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--text-dim);
+      padding-top: 4px;
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .layer-type-tag {
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+    }
+
+    .layer-type-tag.kml {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--accent-emerald);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .layer-type-tag.geojson {
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent-blue);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .layer-empty-state {
+      padding: 24px 12px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-dim);
+    }
+
+    .layer-empty-state svg {
+      width: 36px;
+      height: 36px;
+      color: var(--text-dim);
+      opacity: 0.6;
+    }
+
+    .layer-empty-state p {
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    /* Floating Quick Hint Box in bottom center */
+    .quick-hint-pill {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 15;
+      background: var(--surface-glass);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--surface-glass-border);
+      border-radius: var(--radius-xl);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: var(--shadow-lg);
+      pointer-events: auto;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+
+    .quick-hint-pill svg {
+      width: 18px;
+      height: 18px;
+      color: var(--accent-cyan);
+      animation: bounce 2s infinite ease-in-out;
+    }
+
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+
+    .quick-hint-pill span {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .quick-hint-pill strong {
+      color: var(--text-main);
+    }
+
+    /* Fullscreen Drag & Drop Overlay */
+    .drag-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(9, 13, 22, 0.88);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .drag-overlay.active {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+
+    .drag-overlay-box {
+      width: min(580px, 90vw);
+      height: 380px;
+      border: 2px dashed var(--accent-cyan);
+      border-radius: var(--radius-xl);
+      background: radial-gradient(circle at center, rgba(6, 182, 212, 0.12) 0%, rgba(15, 23, 42, 0.85) 100%);
+      box-shadow: 0 0 60px rgba(6, 182, 212, 0.25), inset 0 0 40px rgba(6, 182, 212, 0.1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 30px;
+      gap: 18px;
+      animation: pulseGlow 3s infinite alternate;
+      transform: scale(0.95);
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .drag-overlay.active .drag-overlay-box {
+      transform: scale(1);
+    }
+
+    @keyframes pulseGlow {
+      0% {
+        border-color: rgba(6, 182, 212, 0.7);
+        box-shadow: 0 0 40px rgba(6, 182, 212, 0.2), inset 0 0 20px rgba(6, 182, 212, 0.08);
+      }
+      100% {
+        border-color: rgba(6, 182, 212, 1);
+        box-shadow: 0 0 80px rgba(6, 182, 212, 0.45), inset 0 0 50px rgba(6, 182, 212, 0.2);
+      }
+    }
+
+    .drag-icon-circle {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: rgba(6, 182, 212, 0.15);
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent-cyan);
+      box-shadow: 0 0 24px rgba(6, 182, 212, 0.35);
+    }
+
+    .drag-icon-circle svg {
+      width: 36px;
+      height: 36px;
+      stroke-width: 2;
+    }
+
+    .drag-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: -0.3px;
+    }
+
+    .drag-sub {
+      font-size: 14px;
+      color: var(--text-muted);
+      max-width: 420px;
+      line-height: 1.5;
+    }
+
+    .file-badges-row {
+      display: flex;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    .file-pill {
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+      padding: 4px 10px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: var(--text-main);
+    }
+
+    /* Feature Inspection Popup Overlay */
+    .feature-popup {
+      position: absolute;
+      background: var(--surface-card);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--surface-glass-border);
+      border-radius: var(--radius-lg);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 20px rgba(6, 182, 212, 0.2);
+      padding: 0;
+      width: 330px;
+      max-width: 90vw;
+      color: var(--text-main);
+      transform: translate(-50%, calc(-100% - 15px));
+      z-index: 100;
+      overflow: hidden;
+      pointer-events: auto;
+      transition: opacity 0.2s ease;
+    }
+
+    .feature-popup::after {
+      content: '';
+      position: absolute;
+      bottom: -8px;
+      left: 50%;
+      transform: translateX(-50%) rotate(45deg);
+      width: 16px;
+      height: 16px;
+      background: var(--surface-card);
+      border-right: 1px solid var(--surface-glass-border);
+      border-bottom: 1px solid var(--surface-glass-border);
+    }
+
+    .popup-header {
+      padding: 12px 16px;
+      background: rgba(255, 255, 255, 0.04);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .popup-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .popup-geom-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(6, 182, 212, 0.15);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+    }
+
+    .popup-close-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 2px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .popup-close-btn:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .popup-content {
+      padding: 14px 16px;
+      max-height: 280px;
+      overflow-y: auto;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .props-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .props-table tr {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .props-table tr:last-child {
+      border-bottom: none;
+    }
+
+    .props-table td {
+      padding: 6px 4px;
+      vertical-align: top;
+    }
+
+    .props-key {
+      color: var(--text-muted);
+      font-weight: 500;
+      width: 38%;
+      word-break: break-all;
+    }
+
+    .props-val {
+      color: var(--text-main);
+      word-break: break-word;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .kml-desc-container {
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 11.5px;
+      line-height: 1.5;
+      color: #e2e8f0;
+      max-height: 140px;
+      overflow-y: auto;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .kml-desc-container a {
+      color: var(--accent-cyan);
+    }
+
+    /* Toast Notification System */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .toast {
+      background: var(--surface-card);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--surface-glass-border);
+      border-radius: var(--radius-md);
+      padding: 12px 18px;
+      color: var(--text-main);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      font-weight: 500;
+      pointer-events: auto;
+      animation: toastIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      max-width: 380px;
+    }
+
+    @keyframes toastIn {
+      from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .toast.success {
+      border-left: 4px solid var(--accent-emerald);
+    }
+
+    .toast.info {
+      border-left: 4px solid var(--accent-cyan);
+    }
+
+    .toast.error {
+      border-left: 4px solid var(--accent-rose);
+    }
+
+    .toast svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    .toast.success svg { color: var(--accent-emerald); }
+    .toast.info svg { color: var(--accent-cyan); }
+    .toast.error svg { color: var(--accent-rose); }
+
+    /* Hidden file input */
+    #file-input {
+      display: none;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      .top-nav {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .nav-brand-group {
+        justify-content: space-between;
+      }
+      .nav-actions-group {
+        overflow-x: auto;
+        padding-bottom: 4px;
+      }
+      .layer-panel {
+        top: 130px;
+        left: 10px;
+        right: 10px;
+        width: calc(100vw - 20px);
+      }
+      .quick-hint-pill {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Fullscreen OpenLayers Map -->
+  <div id="map" role="region" aria-label="Geographic Map"></div>
+
+  <!-- Hidden File Input for click-to-browse -->
+  <input type="file" id="file-input" multiple accept=".kml,.kmz,.geojson,.json,.gpx">
+
+  <!-- Top Floating Navigation -->
+  <header class="top-nav">
+    <div class="nav-brand-group">
+      <div class="glass-pill">
+        <a href="#" class="brand-logo" id="brand-link" title="GeoDrop Spatial Viewer">
+          <div class="brand-icon-wrapper">
+            <svg viewBox="0 0 24 24">
+              <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+              <line x1="8" y1="2" x2="8" y2="18"></line>
+              <line x1="16" y1="6" x2="16" y2="22"></line>
+            </svg>
+          </div>
+          <span class="brand-title">GeoDrop</span>
+        </a>
+        <div class="badge-count" id="layer-count-badge">0 Layers</div>
+      </div>
+
+      <!-- Toggle Layer Panel Button -->
+      <button class="btn" id="toggle-panel-btn" title="Toggle Layer List">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 17 12 22 22 17"></polyline>
+          <polyline points="2 12 12 17 22 12"></polyline>
+        </svg>
+        <span>Layers</span>
+      </button>
+    </div>
+
+    <div class="nav-actions-group">
+      <!-- Basemap Switcher (Free, No API Key Required) -->
+      <select class="select-dropdown" id="basemap-select" title="Switch Basemap" aria-label="Select Basemap">
+        <option value="osm" selected>OpenStreetMap</option>
+        <option value="esri-dark">Esri Dark Canvas</option>
+        <option value="satellite">Esri Satellite</option>
+        <option value="esri-streets">Esri Streets</option>
+        <option value="topo">OpenTopoMap</option>
+      </select>
+
+      <!-- Browse Files Button -->
+      <button class="btn btn-primary" id="browse-btn" title="Upload KML or GeoJSON files">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+        <span>Browse Files</span>
+      </button>
+
+      <!-- Zoom to All Layers -->
+      <button class="btn" id="fit-all-btn" title="Zoom to fit all data">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="22" y1="12" x2="18" y2="12"></line>
+          <line x1="6" y1="12" x2="2" y2="12"></line>
+          <line x1="12" y1="6" x2="12" y2="2"></line>
+          <line x1="12" y1="22" x2="12" y2="18"></line>
+        </svg>
+        <span>Fit Extent</span>
+      </button>
+
+      <!-- Clear Layers -->
+      <button class="btn" id="clear-all-btn" title="Clear all imported layers">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+        <span>Clear</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Floating Layer Manager Panel -->
+  <aside class="layer-panel" id="layer-panel">
+    <div class="layer-panel-header">
+      <div class="layer-panel-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 17 12 22 22 17"></polyline>
+          <polyline points="2 12 12 17 22 12"></polyline>
+        </svg>
+        <span>Active Layers</span>
+      </div>
+      <button class="layer-icon-btn" id="close-panel-btn" title="Hide Panel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="layer-panel-body" id="layer-list-container">
+      <!-- Empty state initially -->
+      <div class="layer-empty-state" id="layer-empty-placeholder">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="12" y1="18" x2="12" y2="12"></line>
+          <line x1="9" y1="15" x2="15" y2="15"></line>
+        </svg>
+        <p>No layers loaded yet.<br><strong>Drag &amp; drop a KML or GeoJSON file anywhere</strong> on the screen, or click Browse.</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Quick Hint Pill (bottom center) -->
+  <div class="quick-hint-pill" id="quick-hint">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+      <polyline points="17 8 12 3 7 8"></polyline>
+      <line x1="12" y1="3" x2="12" y2="15"></line>
+    </svg>
+    <span>Drag and drop <strong>.KML</strong> or <strong>.GeoJSON</strong> files anywhere to view</span>
+  </div>
+
+  <!-- Fullscreen Drag & Drop Overlay -->
+  <div class="drag-overlay" id="drag-overlay">
+    <div class="drag-overlay-box">
+      <div class="drag-icon-circle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+      </div>
+      <div class="drag-title">Drop Spatial File Here</div>
+      <div class="drag-sub">Release your file to instantly parse and render geometric vectors on the map with automatic framing.</div>
+      <div class="file-badges-row">
+        <span class="file-pill">.KML</span>
+        <span class="file-pill">.KMZ</span>
+        <span class="file-pill">.GEOJSON</span>
+        <span class="file-pill">.JSON</span>
+        <span class="file-pill">.GPX</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Feature Inspection Popup Overlay -->
+  <div id="feature-popup" class="feature-popup" style="display: none;">
+    <div class="popup-header">
+      <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
+        <span class="popup-title" id="popup-title">Feature Details</span>
+        <span class="popup-geom-badge" id="popup-geom-type">Point</span>
+      </div>
+      <button class="popup-close-btn" id="popup-close-btn" title="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+    <div class="popup-content" id="popup-content"></div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Application Logic -->
+  <script>
+    // Vibrant Layer Palette for distinct layer differentiation
+    const PALETTE = [
+      '#06b6d4', // Cyan
+      '#10b981', // Emerald
+      '#f59e0b', // Amber
+      '#8b5cf6', // Violet
+      '#ec4899', // Pink
+      '#3b82f6', // Blue
+      '#14b8a6', // Teal
+      '#f97316'  // Orange
+    ];
+    let paletteIdx = 0;
+
+    function getNextColor() {
+      const color = PALETTE[paletteIdx % PALETTE.length];
+      paletteIdx++;
+      return color;
+    }
+
+    function hexToRgba(hex, alpha = 0.3) {
+      hex = hex.replace('#', '');
+      if (hex.length === 3) {
+        hex = hex.split('').map(c => c + c).join('');
+      }
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    // Free Basemap Definitions (Zero API Key Required)
+    const basemaps = {
+      'osm': new ol.layer.Tile({
+        source: new ol.source.OSM({
+          attributions: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors'
+        }),
+        visible: true
+      }),
+      'esri-dark': new ol.layer.Group({
+        layers: [
+          new ol.layer.Tile({
+            source: new ol.source.XYZ({
+              url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+              attributions: 'Tiles © Esri, HERE, Garmin'
+            })
+          }),
+          new ol.layer.Tile({
+            source: new ol.source.XYZ({
+              url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}'
+            })
+          })
+        ],
+        visible: false
+      }),
+      'satellite': new ol.layer.Tile({
+        source: new ol.source.XYZ({
+          url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+          attributions: 'Tiles © Esri, Maxar, Earthstar Geographics'
+        }),
+        visible: false
+      }),
+      'esri-streets': new ol.layer.Tile({
+        source: new ol.source.XYZ({
+          url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+          attributions: 'Tiles © Esri'
+        }),
+        visible: false
+      }),
+      'topo': new ol.layer.Tile({
+        source: new ol.source.XYZ({
+          url: 'https://{a-c}.tile.opentopomap.org/{z}/{x}/{y}.png',
+          attributions: 'Map data: © OpenStreetMap, SRTM | Map style: © OpenTopoMap'
+        }),
+        visible: false
+      })
+    };
+
+    // Initialize OpenLayers Map
+    const map = new ol.Map({
+      target: 'map',
+      layers: Object.values(basemaps),
+      view: new ol.View({
+        center: ol.proj.fromLonLat([15, 35]),
+        zoom: 3,
+        maxZoom: 20
+      }),
+      controls: ol.control.defaults.defaults({
+        attributionOptions: { collapsible: true }
+      }).extend([
+        new ol.control.ScaleLine({ units: 'metric' })
+      ])
+    });
+
+    // Basemap Switcher Handler
+    document.getElementById('basemap-select').addEventListener('change', (e) => {
+      const selected = e.target.value;
+      Object.keys(basemaps).forEach(key => {
+        basemaps[key].setVisible(key === selected);
+      });
+      showToast(`Basemap switched to ${e.target.options[e.target.selectedIndex].text}`, 'info');
+    });
+
+    // App State: Loaded Layers Registry
+    const loadedLayers = []; // array of { id, name, type, color, layer, featuresCount, extent }
+
+    // Popup Overlay Initialization
+    const popupContainer = document.getElementById('feature-popup');
+    const popupOverlay = new ol.Overlay({
+      element: popupContainer,
+      autoPan: {
+        animation: {
+          duration: 300
+        },
+        margin: 40
+      },
+      positioning: 'bottom-center',
+      stopEvent: true
+    });
+    map.addOverlay(popupOverlay);
+
+    document.getElementById('popup-close-btn').addEventListener('click', () => {
+      popupOverlay.setPosition(undefined);
+    });
+
+    // Feature Click Listener for Inspection
+    map.on('singleclick', function (evt) {
+      const feature = map.forEachFeatureAtPixel(evt.pixel, (feat, layer) => {
+        // Only inspect features from loaded vector layers
+        return feat;
+      });
+
+      if (feature) {
+        const coordinate = evt.coordinate;
+        showFeaturePopup(feature, coordinate);
+      } else {
+        popupOverlay.setPosition(undefined);
+      }
+    });
+
+    // Cursor pointer on feature hover
+    map.on('pointermove', function (e) {
+      if (e.dragging) return;
+      const hit = map.hasFeatureAtPixel(e.pixel);
+      map.getTargetElement().style.cursor = hit ? 'pointer' : '';
+    });
+
+    function showFeaturePopup(feature, coordinate) {
+      const props = feature.getProperties();
+      const geom = feature.getGeometry();
+      const geomType = geom ? geom.getType() : 'Unknown';
+
+      // Determine feature title
+      const title = props.name || props.Name || props.title || props.id || 'Placemark';
+
+      document.getElementById('popup-title').innerText = title;
+      document.getElementById('popup-geom-type').innerText = geomType;
+
+      const popupContent = document.getElementById('popup-content');
+      popupContent.innerHTML = '';
+
+      // Check for KML description
+      if (props.description) {
+        const descDiv = document.createElement('div');
+        descDiv.className = 'kml-desc-container';
+        descDiv.innerHTML = props.description;
+        popupContent.appendChild(descDiv);
+      }
+
+      // Build Attributes Table
+      const table = document.createElement('table');
+      table.className = 'props-table';
+
+      let rowCount = 0;
+      for (const [key, val] of Object.entries(props)) {
+        // Skip internal OL geometry and raw description if already displayed
+        if (key === 'geometry' || key === 'description' || key === 'styleUrl') continue;
+        if (typeof val === 'object' && val !== null && !Array.isArray(val)) continue;
+
+        const tr = document.createElement('tr');
+        const tdKey = document.createElement('td');
+        tdKey.className = 'props-key';
+        tdKey.innerText = key;
+
+        const tdVal = document.createElement('td');
+        tdVal.className = 'props-val';
+        tdVal.innerText = typeof val === 'object' ? JSON.stringify(val) : String(val);
+
+        tr.appendChild(tdKey);
+        tr.appendChild(tdVal);
+        table.appendChild(tr);
+        rowCount++;
+      }
+
+      if (rowCount > 0) {
+        popupContent.appendChild(table);
+      } else if (!props.description) {
+        const emptyMsg = document.createElement('div');
+        emptyMsg.style.color = 'var(--text-muted)';
+        emptyMsg.style.fontStyle = 'italic';
+        emptyMsg.innerText = 'No additional attributes.';
+        popupContent.appendChild(emptyMsg);
+      }
+
+      popupOverlay.setPosition(coordinate);
+    }
+
+    // Default Style Generator for Vector Layers
+    function createVectorStyle(colorHex) {
+      const fill = new ol.style.Fill({
+        color: hexToRgba(colorHex, 0.35)
+      });
+      const stroke = new ol.style.Stroke({
+        color: colorHex,
+        width: 2.5
+      });
+      const pointCircle = new ol.style.Circle({
+        radius: 7,
+        fill: new ol.style.Fill({ color: colorHex }),
+        stroke: new ol.style.Stroke({ color: '#ffffff', width: 2 })
+      });
+
+      return function (feature) {
+        // If KML extracted a custom feature style, use it
+        const featStyle = feature.getStyle();
+        if (featStyle) {
+          if (typeof featStyle === 'function') {
+            const res = featStyle(feature);
+            if (res) return res;
+          } else {
+            return featStyle;
+          }
+        }
+        return new ol.style.Style({
+          fill: fill,
+          stroke: stroke,
+          image: pointCircle
+        });
+      };
+    }
+
+    // Layer Addition & Management
+    function registerVectorLayer(features, fileName, fileType) {
+      if (!features || features.length === 0) {
+        showToast(`No valid vector features found in "${fileName}".`, 'error');
+        return;
+      }
+
+      const layerColor = getNextColor();
+      const vectorSource = new ol.source.Vector({
+        features: features
+      });
+
+      const vectorLayer = new ol.layer.Vector({
+        source: vectorSource,
+        style: createVectorStyle(layerColor)
+      });
+
+      map.addLayer(vectorLayer);
+
+      const extent = vectorSource.getExtent();
+      const layerId = 'layer_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+
+      const layerItem = {
+        id: layerId,
+        name: fileName,
+        type: fileType,
+        color: layerColor,
+        layer: vectorLayer,
+        featuresCount: features.length,
+        extent: extent
+      };
+
+      loadedLayers.push(layerItem);
+
+      // Fit map to layer extent
+      if (extent && !ol.extent.isEmpty(extent)) {
+        map.getView().fit(extent, {
+          padding: [70, 70, 70, 70],
+          duration: 900,
+          maxZoom: 17
+        });
+      }
+
+      updateLayerUI();
+      showToast(`Loaded "${fileName}" (${features.length} features)`, 'success');
+      
+      // Auto open panel
+      document.getElementById('layer-panel').classList.remove('collapsed');
+    }
+
+    function updateLayerUI() {
+      const countBadge = document.getElementById('layer-count-badge');
+      countBadge.innerText = `${loadedLayers.length} Layer${loadedLayers.length === 1 ? '' : 's'}`;
+
+      const container = document.getElementById('layer-list-container');
+      const placeholder = document.getElementById('layer-empty-placeholder');
+      const quickHint = document.getElementById('quick-hint');
+
+      if (loadedLayers.length === 0) {
+        placeholder.style.display = 'flex';
+        quickHint.style.opacity = '1';
+        // Clear cards
+        container.querySelectorAll('.layer-item-card').forEach(el => el.remove());
+        return;
+      }
+
+      placeholder.style.display = 'none';
+      quickHint.style.opacity = '0';
+      container.querySelectorAll('.layer-item-card').forEach(el => el.remove());
+
+      loadedLayers.slice().reverse().forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'layer-item-card';
+        card.id = `card-${item.id}`;
+
+        card.innerHTML = `
+          <div class="layer-item-top">
+            <div class="layer-title-meta">
+              <span class="layer-color-dot" style="background-color: ${item.color}; color: ${item.color};"></span>
+              <span class="layer-name" title="${item.name}">${item.name}</span>
+            </div>
+            <div class="layer-actions">
+              <button class="layer-icon-btn btn-vis" title="Toggle Visibility" data-id="${item.id}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+              </button>
+              <button class="layer-icon-btn btn-zoom" title="Zoom to layer" data-id="${item.id}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+              </button>
+              <button class="layer-icon-btn btn-delete" title="Delete layer" data-id="${item.id}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="layer-item-bottom">
+            <span class="layer-type-tag ${item.type.toLowerCase()}">${item.type}</span>
+            <span>${item.featuresCount} feature${item.featuresCount === 1 ? '' : 's'}</span>
+          </div>
+        `;
+
+        // Action Handlers
+        const visBtn = card.querySelector('.btn-vis');
+        visBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const isVisible = item.layer.getVisible();
+          item.layer.setVisible(!isVisible);
+          visBtn.style.opacity = isVisible ? '0.4' : '1';
+        });
+
+        const zoomBtn = card.querySelector('.btn-zoom');
+        zoomBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (item.extent && !ol.extent.isEmpty(item.extent)) {
+            map.getView().fit(item.extent, {
+              padding: [60, 60, 60, 60],
+              duration: 700
+            });
+          }
+        });
+
+        const delBtn = card.querySelector('.btn-delete');
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          removeLayer(item.id);
+        });
+
+        container.appendChild(card);
+      });
+    }
+
+    function removeLayer(layerId) {
+      const idx = loadedLayers.findIndex(l => l.id === layerId);
+      if (idx !== -1) {
+        const [removed] = loadedLayers.splice(idx, 1);
+        map.removeLayer(removed.layer);
+        popupOverlay.setPosition(undefined);
+        updateLayerUI();
+        showToast(`Removed "${removed.name}"`, 'info');
+      }
+    }
+
+    function clearAllLayers() {
+      if (loadedLayers.length === 0) return;
+      while (loadedLayers.length > 0) {
+        const item = loadedLayers.pop();
+        map.removeLayer(item.layer);
+      }
+      popupOverlay.setPosition(undefined);
+      updateLayerUI();
+      showToast('All layers cleared.', 'info');
+    }
+
+    function fitAllLayers() {
+      if (loadedLayers.length === 0) {
+        showToast('No layers loaded to fit.', 'info');
+        return;
+      }
+      const combinedExtent = ol.extent.createEmpty();
+      loadedLayers.forEach(l => {
+        if (l.extent && !ol.extent.isEmpty(l.extent)) {
+          ol.extent.extend(combinedExtent, l.extent);
+        }
+      });
+      if (!ol.extent.isEmpty(combinedExtent)) {
+        map.getView().fit(combinedExtent, {
+          padding: [80, 80, 80, 80],
+          duration: 900
+        });
+      }
+    }
+
+    // Parser Dispatcher: KML, KMZ, GeoJSON, GPX
+    async function processFile(file) {
+      const fileName = file.name;
+      const lowerName = fileName.toLowerCase();
+
+      try {
+        if (lowerName.endsWith('.kmz')) {
+          // Decompress KMZ using JSZip
+          const zip = await JSZip.loadAsync(file);
+          const kmlEntry = Object.values(zip.files).find(entry => entry.name.toLowerCase().endsWith('.kml'));
+          if (!kmlEntry) {
+            throw new Error('KMZ file does not contain a valid .kml document.');
+          }
+          const kmlText = await kmlEntry.async('text');
+          parseKmlContent(kmlText, fileName, 'KMZ');
+        } else if (lowerName.endsWith('.kml')) {
+          const text = await file.text();
+          parseKmlContent(text, fileName, 'KML');
+        } else if (lowerName.endsWith('.geojson') || lowerName.endsWith('.json')) {
+          const text = await file.text();
+          parseGeoJsonContent(text, fileName, 'GeoJSON');
+        } else if (lowerName.endsWith('.gpx')) {
+          const text = await file.text();
+          parseGpxContent(text, fileName, 'GPX');
+        } else {
+          // Unknown extension: sniff content
+          const text = await file.text();
+          if (text.includes('<kml') || text.includes('xmlns="http://www.opengis.net/kml/2.2"')) {
+            parseKmlContent(text, fileName, 'KML');
+          } else {
+            // Attempt GeoJSON parse
+            try {
+              JSON.parse(text);
+              parseGeoJsonContent(text, fileName, 'GeoJSON');
+            } catch (err) {
+              throw new Error(`Unsupported or unrecognized spatial file format: ${fileName}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('File parsing error:', err);
+        showToast(`Error loading ${fileName}: ${err.message}`, 'error');
+      }
+    }
+
+    function parseKmlContent(kmlString, fileName, typeLabel = 'KML') {
+      const kmlFormat = new ol.format.KML({
+        extractStyles: true,
+        showPointNames: true
+      });
+      const features = kmlFormat.readFeatures(kmlString, {
+        featureProjection: map.getView().getProjection()
+      });
+      registerVectorLayer(features, fileName, typeLabel);
+    }
+
+    function parseGeoJsonContent(geojsonString, fileName, typeLabel = 'GeoJSON') {
+      const geojsonFormat = new ol.format.GeoJSON();
+      const features = geojsonFormat.readFeatures(geojsonString, {
+        featureProjection: map.getView().getProjection()
+      });
+      registerVectorLayer(features, fileName, typeLabel);
+    }
+
+    function parseGpxContent(gpxString, fileName, typeLabel = 'GPX') {
+      const gpxFormat = new ol.format.GPX();
+      const features = gpxFormat.readFeatures(gpxString, {
+        featureProjection: map.getView().getProjection()
+      });
+      registerVectorLayer(features, fileName, typeLabel);
+    }
+
+    // HTML5 Drag and Drop Event Listeners with Drop Overlay
+    const dragOverlay = document.getElementById('drag-overlay');
+    let dragCounter = 0;
+
+    window.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      dragCounter++;
+      dragOverlay.classList.add('active');
+    });
+
+    window.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+
+    window.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        dragOverlay.classList.remove('active');
+      }
+    });
+
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      dragOverlay.classList.remove('active');
+
+      const dt = e.dataTransfer;
+      if (dt && dt.files && dt.files.length > 0) {
+        Array.from(dt.files).forEach(file => {
+          processFile(file);
+        });
+      }
+    });
+
+    // File Input Browse Button Handlers
+    const fileInput = document.getElementById('file-input');
+    const browseBtn = document.getElementById('browse-btn');
+
+    browseBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        Array.from(e.target.files).forEach(file => {
+          processFile(file);
+        });
+        fileInput.value = ''; // Reset input
+      }
+    });
+
+    // Top Navigation Action Buttons
+    document.getElementById('fit-all-btn').addEventListener('click', fitAllLayers);
+    document.getElementById('clear-all-btn').addEventListener('click', clearAllLayers);
+
+    // Toggle Layer Panel
+    const layerPanel = document.getElementById('layer-panel');
+    const togglePanelBtn = document.getElementById('toggle-panel-btn');
+    const closePanelBtn = document.getElementById('close-panel-btn');
+
+    togglePanelBtn.addEventListener('click', () => {
+      layerPanel.classList.toggle('collapsed');
+    });
+
+    closePanelBtn.addEventListener('click', () => {
+      layerPanel.classList.add('collapsed');
+    });
+
+    // Toast Notification Utility
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+
+      let iconSvg = '';
+      if (type === 'success') {
+        iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+      } else if (type === 'error') {
+        iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>';
+      } else {
+        iconSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>';
+      }
+
+      toast.innerHTML = `${iconSvg}<span>${message}</span>`;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px) scale(0.95)';
+        toast.style.transition = 'all 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+      }, 4200);
+    }
+  </script>
+</body>
+</html>
